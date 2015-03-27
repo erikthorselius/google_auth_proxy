@@ -46,6 +46,10 @@ func main() {
 	flagSet.Bool("cookie-https-only", true, "set HTTPS only cookie")
 	flagSet.Bool("cookie-httponly", true, "set HttpOnly cookie")
 
+	flagSet.String("login-url", "", "[http://]<addr>:<port> the oauth providers login resource")
+	flagSet.String("redeem-url", "", "[http://]<addr>:<port> the oauth provider token resource")
+	flagSet.String("profile-url", "","[http://]<addr>:<port> the oauth provider profile resource")
+
 	flagSet.Parse(os.Args[1:])
 
 	if *showVersion {

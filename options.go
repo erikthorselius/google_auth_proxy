@@ -32,10 +32,17 @@ type Options struct {
 	PassBasicAuth  bool     `flag:"pass-basic-auth" cfg:"pass_basic_auth"`
 	PassHostHeader bool     `flag:"pass-host-header" cfg:"pass_host_header"`
 
+	LoginUrl        string        `flag:"login-url" cfg:"login-url" env:"GOOGLE_AUTH_PROXY_LOGIN_URL"`
+	RedeemUrl       string        `flag:"redeem-url" cfg:"redeem-url" env:"GOOGLE_AUTH_PROXY_REDEEM_URL"`
+	ProfileUrl      string        `flag:"profile-url" cfg:"profile-url" env:"GOOGLE_AUTH_PROXY_PROFILE_URL"`
+
 	// internal values that are set after config validation
 	redirectUrl   *url.URL
 	proxyUrls     []*url.URL
 	CompiledRegex []*regexp.Regexp
+	loginUrl   *url.URL
+	redeemUrl   *url.URL
+	profileUrl   *url.URL
 }
 
 func NewOptions() *Options {
@@ -47,6 +54,8 @@ func NewOptions() *Options {
 		CookieExpire:        time.Duration(168) * time.Hour,
 		PassBasicAuth:       true,
 		PassHostHeader:      true,
+		LoginUrl:			 "https://accounts.google.com/o/oauth2/auth",
+		RedeemUrl:			 "https://accounts.google.com/o/oauth2/token",
 	}
 }
 
@@ -68,16 +77,37 @@ func (o *Options) Validate() error {
 	redirectUrl, err := url.Parse(o.RedirectUrl)
 	if err != nil {
 		msgs = append(msgs, fmt.Sprintf(
-			"error parsing redirect-url=%q %s", o.RedirectUrl, err))
+				"error parsing redirect-url=%q %s", o.RedirectUrl, err))
 	}
 	o.redirectUrl = redirectUrl
+
+	loginUrl, err := url.Parse(o.LoginUrl)
+	if err != nil {
+		msgs = append(msgs, fmt.Sprintf(
+				"error parsing login-url=%q %s", o.LoginUrl, err))
+	}
+	o.loginUrl = loginUrl
+	println(o.loginUrl.String())
+	redeemUrl, err := url.Parse(o.RedeemUrl)
+	if err != nil {
+		msgs = append(msgs, fmt.Sprintf(
+				"error parsing redeem-url=%q %s", o.RedeemUrl, err))
+	}
+	o.redeemUrl = redeemUrl
+
+	profileUrl, err := url.Parse(o.ProfileUrl)
+	if err != nil {
+		msgs = append(msgs, fmt.Sprintf(
+				"error parsing profile-url=%q %s", o.ProfileUrl, err))
+	}
+	o.profileUrl = profileUrl
 
 	for _, u := range o.Upstreams {
 		upstreamUrl, err := url.Parse(u)
 		if err != nil {
 			msgs = append(msgs, fmt.Sprintf(
-				"error parsing upstream=%q %s",
-				upstreamUrl, err))
+					"error parsing upstream=%q %s",
+					upstreamUrl, err))
 		}
 		if upstreamUrl.Path == "" {
 			upstreamUrl.Path = "/"
@@ -89,7 +119,7 @@ func (o *Options) Validate() error {
 		CompiledRegex, err := regexp.Compile(u)
 		if err != nil {
 			msgs = append(msgs, fmt.Sprintf(
-				"error compiling regex=%q %s", u, err))
+					"error compiling regex=%q %s", u, err))
 		}
 		o.CompiledRegex = append(o.CompiledRegex, CompiledRegex)
 	}
