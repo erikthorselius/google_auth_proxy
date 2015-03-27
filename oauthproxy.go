@@ -35,6 +35,7 @@ type OauthProxy struct {
 	redirectUrl         *url.URL // the url to receive requests at
 	oauthRedemptionUrl  *url.URL // endpoint to redeem the code
 	oauthLoginUrl       *url.URL // to redirect the user to
+	oauthProfileUrl		*url.URL
 	oauthScope          string
 	clientID            string
 	clientSecret        string
@@ -60,8 +61,8 @@ func setProxyUpstreamHostHeader(proxy *httputil.ReverseProxy, target *url.URL) {
 }
 
 func NewOauthProxy(opts *Options, validator func(string) bool) *OauthProxy {
-	login, _ := url.Parse("https://accounts.google.com/o/oauth2/auth")
-	redeem, _ := url.Parse("https://accounts.google.com/o/oauth2/token")
+  login := opts.loginUrl
+  redeem := opts.redeemUrl
 	serveMux := http.NewServeMux()
 	for _, u := range opts.proxyUrls {
 		path := u.Path
@@ -98,6 +99,7 @@ func NewOauthProxy(opts *Options, validator func(string) bool) *OauthProxy {
 		clientID:           opts.ClientID,
 		clientSecret:       opts.ClientSecret,
 		oauthScope:         "profile email",
+		oauthProfileUrl:	opts.profileUrl,
 		oauthRedemptionUrl: redeem,
 		oauthLoginUrl:      login,
 		serveMux:           serveMux,
@@ -114,7 +116,7 @@ func (p *OauthProxy) GetLoginURL(redirectUrl string) string {
 	params.Add("redirect_uri", p.redirectUrl.String())
 	params.Add("approval_prompt", "force")
 	params.Add("scope", p.oauthScope)
-	params.Add("client_id", p.clientID)
+	params.Add("clientid", p.clientID)
 	params.Add("response_type", "code")
 	if strings.HasPrefix(redirectUrl, "/") {
 		params.Add("state", redirectUrl)
@@ -154,9 +156,9 @@ func (p *OauthProxy) redeemCode(code string) (string, string, error) {
 	}
 	params := url.Values{}
 	params.Add("redirect_uri", p.redirectUrl.String())
-	params.Add("client_id", p.clientID)
+	params.Add("clientid", p.clientID)
 	params.Add("client_secret", p.clientSecret)
-	params.Add("code", code)
+	params.Add("exchange_token", code)
 	params.Add("grant_type", "authorization_code")
 	req, err := http.NewRequest("POST", p.oauthRedemptionUrl.String(), bytes.NewBufferString(params.Encode()))
 	if err != nil {
@@ -169,33 +171,44 @@ func (p *OauthProxy) redeemCode(code string) (string, string, error) {
 		log.Printf("failed making request %s", err)
 		return "", "", err
 	}
-	access_token, err := json.Get("access_token").String()
+	access_token, err := json.Get("data").String()
+
 	if err != nil {
 		return "", "", err
 	}
 
-	idToken, err := json.Get("id_token").String()
-	if err != nil {
-		return "", "", err
-	}
-
-	// id_token is a base64 encode ID token payload
-	// https://developers.google.com/accounts/docs/OAuth2Login#obtainuserinfo
-	jwt := strings.Split(idToken, ".")
-	b, err := jwtDecodeSegment(jwt[1])
-	if err != nil {
-		return "", "", err
-	}
-	data, err := simplejson.NewJson(b)
-	if err != nil {
-		return "", "", err
-	}
-	email, err := data.Get("email").String()
-	if err != nil {
-		return "", "", err
-	}
+  	email, err := p.getEmail(access_token)
 
 	return access_token, email, nil
+}
+
+func (p *OauthProxy) addQueryToProfileUrl(access_token string) (*url.URL) {
+	q := p.oauthProfileUrl.Query()
+	q.Set("access_token", access_token)
+	p.oauthProfileUrl.RawQuery = q.Encode()
+	fmt.Printf("Profile: %v \n", p.oauthProfileUrl)
+	return p.oauthProfileUrl
+}
+
+func (p *OauthProxy) getEmail(access_token string) (string, error) {
+	req, err := http.NewRequest("GET", p.addQueryToProfileUrl(access_token).String(), nil)
+	if err != nil {
+		log.Printf("failed building request %s", err.Error())
+		return "", err
+	}
+	json, err := apiRequest(req)
+	if err != nil {
+		log.Printf("failed making request %s", err)
+		return "", err
+	}
+	email,err := json.Get("data").GetIndex(0).Get("email").String()
+	log.Printf("%s", email)
+
+	if err != nil {
+		return "", err
+	}
+
+	return email, nil
 }
 
 func jwtDecodeSegment(seg string) ([]byte, error) {
@@ -373,7 +386,7 @@ func (p *OauthProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		_, email, err := p.redeemCode(req.Form.Get("code"))
+		_, email, err := p.redeemCode(req.Form.Get("exchange_token"))
 		if err != nil {
 			log.Printf("%s error redeeming code %s", remoteAddr, err)
 			p.ErrorPage(rw, 500, "Internal Error", err.Error())
@@ -396,7 +409,6 @@ func (p *OauthProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-
 	if !ok {
 		cookie, err := req.Cookie(p.CookieKey)
 		if err == nil {
