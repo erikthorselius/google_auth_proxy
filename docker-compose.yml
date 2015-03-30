@@ -1,0 +1,7 @@
+oauthproxy:
+  build: .
+  volumes: 
+    - ./:/data
+  ports:
+    - "4180:4180"
+  entrypoint: ["/go/bin/google_auth_proxy","-config=/data/google_auth_proxy.cfg"]
