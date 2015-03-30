@@ -1,5 +1,5 @@
 oauthproxy:
-  build: .
+  image: regius/google-auth-proxy
   volumes: 
     - ./:/data
   ports:
