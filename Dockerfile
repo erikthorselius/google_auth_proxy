@@ -10,5 +10,6 @@ RUN go get github.com/erikthorselius/google_auth_proxy
 # Expose the ports we need and setup the ENTRYPOINT w/ the default argument
 # to be pass in.
 EXPOSE 8080 4180
+VOLUME /data
 ENTRYPOINT [ "./bin/google_auth_proxy" ]
 CMD [ "--upstream=http://0.0.0.0:8080/", "--http-address=0.0.0.0:4180" ]
